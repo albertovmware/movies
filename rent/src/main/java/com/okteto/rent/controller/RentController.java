@@ -5,16 +5,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.SendResult;
-import org.springframework.util.concurrent.ListenableFuture;
-import org.springframework.util.concurrent.ListenableFutureCallback;
+// import org.springframework.kafka.support.SendResult;
+// import org.springframework.util.concurrent.ListenableFuture;
+// import org.springframework.util.concurrent.ListenableFutureCallback;
+import java.util.concurrent.CompletableFuture;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.HttpServletResponse;
-import java.util.LinkedList;
+//import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
+//import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Collections;
@@ -28,38 +31,31 @@ public class RentController {
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;
 
-    @GetMapping(path= "/rent", produces = "application/json")
-    Map<String, String> healthz() {
-            return Collections.singletonMap("status", "ok");
+    @GetMapping(path = "/rent", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, String> healthz() {
+        return Collections.singletonMap("status", "ok");
     }
-    
-    @PostMapping(path= "/rent", consumes = "application/json", produces = "application/json")
-    List<String> rent(@RequestBody Rent rentInput, HttpServletResponse response) {
+
+    @PostMapping(path = "/rent", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<String> rent(@RequestBody Rent rentInput, HttpServletResponse response) {
         String catalogID = rentInput.getMovieID();
         String price = rentInput.getPrice();
 
         logger.info("Rent [{},{}] received", catalogID, price);
 
-        ListenableFuture<SendResult<String, String>> future = kafkaTemplate.send(KAFKA_TOPIC, catalogID, price);
-
-        future.addCallback(new ListenableFutureCallback<SendResult<String, String>>() {
-            @Override
-            public void onSuccess(SendResult<String, String> result) {
-                logger.info("Message [{}] delivered with offset {}",
-                        catalogID,
-                        result.getRecordMetadata().offset());
-            }
-
-            @Override
-            public void onFailure(Throwable ex) {
-                logger.warn("Unable to deliver message [{}]. {}",
-                        catalogID,
-                        ex.getMessage());
+        CompletableFuture.runAsync(() -> {
+            kafkaTemplate.send(KAFKA_TOPIC, catalogID, price);
+        }).whenComplete((result, ex) -> {
+            if (ex == null) {
+                logger.info("Message [{}] delivered", catalogID);
+            } else {
+                logger.warn("Unable to deliver message [{}]. {}", catalogID, ex.getMessage());
             }
         });
 
-        return new LinkedList<>();
+        return Collections.emptyList();
     }
+
 
     public static class Rent {
         @JsonProperty("catalog_id")
